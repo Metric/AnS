@@ -1,0 +1,29 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        Width="800"
+        Height="450"
+        x:Class="AnS.MainWindow"
+        Title="AnS">
+  <Grid Background="#ff1f1f1f">
+    <TextBox Name="Search" Height="32" HorizontalAlignment="Stretch" Background="White" CaretBrush="Black" Foreground="Black" Watermark="Search..." VerticalAlignment="Top" AcceptsReturn="False" AcceptsTab="False"></TextBox>
+    <ScrollViewer  Margin="0,32,0,54">
+      <StackPanel Name="ListViewItems">
+        
+      </StackPanel>
+    </ScrollViewer>
+    <Grid Background="#ff111111" Height="54" VerticalAlignment="Bottom">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="128"></ColumnDefinition>
+        <ColumnDefinition Width="*"></ColumnDefinition>
+        <ColumnDefinition Width="*"></ColumnDefinition>
+      </Grid.ColumnDefinitions>
+      
+      <TextBlock Name="StatusText" Grid.Column="0" Text="" Foreground="White" FontSize="18" VerticalAlignment="Center" Margin="20,0,0,0"></TextBlock>
+      <ProgressBar Name="StatusProgress" Grid.Column="1" Margin="10,0,10,0" Height="4" HorizontalAlignment="Stretch" Background="Transparent" Foreground="#FF5555FF" Value="0" Maximum="1.0"></ProgressBar>
+      <CheckBox Name="IncludeRegion" Grid.Column="2" HorizontalAlignment="Right" ToolTip.Tip="Unchecking this will only use individual realm data; may reduce in game memory usage depending on realm." Background="Black" Foreground="DarkGray" Height="32" Margin="10,0,10,0" Content="Include Region Data"></CheckBox>
+    </Grid>
+  </Grid>
+</Window>
