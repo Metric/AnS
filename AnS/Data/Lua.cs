@@ -164,7 +164,13 @@ namespace AnS.Data
         /// <returns></returns>
         public static void Build(Dictionary<string, List<ConnectedRealm>> selected, FileStream stream, bool includeRegion = true)
         {
-            const int MAX_GROUP_SIZE = 20000;
+            const int MAX_GROUP_SIZE = 5000;
+
+            string zero = ((uint)0).ToBase93();
+            string defaultSep = ",";
+            string regionData = zero + zero;
+            string zeroZero = zero + zero;
+            string zeroZeroZeroZero = zero + zero + zero + zero;
 
             using (StreamWriter writer = new StreamWriter(stream))
             {
@@ -180,12 +186,11 @@ namespace AnS.Data
 
                 foreach (string region in selected.Keys)
                 {
+                    Dictionary<string, Dictionary<string, List<ItemGroup>>> all = new Dictionary<string, Dictionary<string, List<ItemGroup>>>();
                     List<ConnectedRealm> realms = selected[region];
 
                     string regID = "\"" + region.ToUpper() + "\"";
                     writer.WriteLine("\ts[" + regID + "] = {};");
-
-                    Dictionary<string, List<ItemGroup>> groups = new Dictionary<string, List<ItemGroup>>();
 
                     KVDB regionDB = new KVDB(directoryPath, region);
                     if (includeRegion)
@@ -229,6 +234,15 @@ namespace AnS.Data
                                 continue;
                             }
 
+                            string rkey = UnpackKey(k);
+                            string[] split = rkey.Split(":");
+                            string subkey = $"{split[0]}:{split[1]}";
+                            Dictionary<string, List<ItemGroup>> groups = null;
+                            all.TryGetValue(subkey, out groups);
+
+                            groups ??= new Dictionary<string, List<ItemGroup>>();
+                            all[subkey] = groups;
+
                             List<ItemGroup> group = null;
                             groups.TryGetValue(k, out group);
                             group ??= new List<ItemGroup>();
@@ -237,6 +251,8 @@ namespace AnS.Data
                         }
 
                         realm.Close();
+
+                        GC.Collect();
                     }
 
                     if (includeRegion && regionDB.Keys.Count() > 0)
@@ -244,24 +260,26 @@ namespace AnS.Data
                         int tcount = 1;
                         int offset = 0;
 
-                        Dictionary<string, Dictionary<string, List<ItemGroup>>> all = new Dictionary<string, Dictionary<string, List<ItemGroup>>>();
-
                         Debug.WriteLine(regionDB.Keys.Count());
 
                         foreach(string k in regionDB.Keys)
                         {
                             Dictionary<string, List<ItemGroup>> subgroups = null;
+
                             string rkey = UnpackKey(k);
                             string[] split = rkey.Split(":");
                             string subkey = $"{split[0]}:{split[1]}";
+
                             all.TryGetValue(subkey, out subgroups);
                             subgroups ??= new Dictionary<string, List<ItemGroup>>();
                             all[subkey] = subgroups;
-
-                            List<ItemGroup> group = null;
-                            groups.TryGetValue(k, out group);
-                            subgroups[k] = group;
+                            if(!subgroups.ContainsKey(k))
+                            {
+                                subgroups[k] = null;
+                            }
                         }
+
+                        GC.Collect();
 
                         Debug.WriteLine(all.Count);
 
@@ -274,9 +292,7 @@ namespace AnS.Data
                                 writer.WriteLine($"\tsd[{tcount++}] = function()");
                             }
 
-                            string zero = ((uint)0).ToBase93();
-
-                            List<string> results = new List<string>();
+                            string results = "";
 
                             for (int i = 0; i < realms.Count; ++i)
                             {
@@ -287,7 +303,6 @@ namespace AnS.Data
                                 {
                                     g = all[sk][k];
 
-                                    string regionData = "";
                                     string regionValue = regionDB.GetString(k);
 
                                     if (!string.IsNullOrEmpty(regionValue))
@@ -297,7 +312,7 @@ namespace AnS.Data
                                     }
                                     else
                                     {
-                                        regionData = zero + zero;
+                                        regionData = zeroZero;
                                     }
 
                                     var r = realms[i];
@@ -307,21 +322,21 @@ namespace AnS.Data
                                     {
                                         var rdat = rg.data;
                                         var dat = rdat[1].ToBase93() + rdat[2].ToBase93() + rdat[3].ToBase93() + rdat[0].ToBase93() + regionData;
-                                        packData += sep + UnpackKey(k) + "," + dat;
+                                        packData += sep + UnpackKey(k) + defaultSep + dat;
                                     }
                                     else
                                     {
-                                        var dat = zero + zero + zero + zero + regionData;
-                                        packData += sep + UnpackKey(k) + "," + dat;
+                                        var dat = zeroZeroZeroZero + regionData;
+                                        packData += sep + UnpackKey(k) + defaultSep + dat;
                                     }
 
-                                    sep = ",";
+                                    sep = defaultSep;
                                 }
 
-                                results.Add(WrapLuaBinary(packData));
+                                results += $"{(results.Length > 0 ? defaultSep : string.Empty)}{WrapLuaBinary(packData)}";
                             }
 
-                            writer.WriteLine($"\t\ts[{regID}][\"{sk}\"] = select(t[rid], {results.Join(",")});");
+                            writer.WriteLine($"\t\ts[{regID}][\"{sk}\"] = select(t[rid], {results});");
                             ++offset;
 
                             if (offset % MAX_GROUP_SIZE == 0)
@@ -340,33 +355,16 @@ namespace AnS.Data
                         int tcount = 1;
                         int offset = 0;
 
-                        Dictionary<string, Dictionary<string, List<ItemGroup>>> all = new Dictionary<string, Dictionary<string, List<ItemGroup>>>();
-
-                        foreach (string k in groups.Keys)
-                        {
-                            Dictionary<string, List<ItemGroup>> subgroups = null;
-                            string rkey = UnpackKey(k);
-                            string[] split = rkey.Split(":");
-                            string subkey = $"{split[0]}:{split[1]}";
-                            all.TryGetValue(subkey, out subgroups);
-                            subgroups ??= new Dictionary<string, List<ItemGroup>>();
-                            all[subkey] = subgroups;
-                            subgroups[rkey] = groups[k];
-                        }
-
                         foreach(string sk in all.Keys)
                         {
                             List<ItemGroup> g = null;
 
-                            if (offset % 20000 == 0)
+                            if (offset % MAX_GROUP_SIZE == 0)
                             {
                                 writer.WriteLine($"\tsd[{tcount++}] = function()");
                             }
 
-                            string zero = ((uint)0).ToBase93();
-                            string regionData = zero + zero;
-
-                            List<string> results = new List<string>();
+                            string results = "";
 
                             for (int i = 0; i < realms.Count; ++i)
                             {
@@ -384,21 +382,21 @@ namespace AnS.Data
                                     {
                                         var rdat = rg.data;
                                         var dat = rdat[1].ToBase93() + rdat[2].ToBase93() + rdat[3].ToBase93() + rdat[0].ToBase93() + regionData;
-                                        packData += sep + k + "," + dat;
+                                        packData += sep + UnpackKey(k) + defaultSep + dat;
                                     }
                                     else
                                     {
-                                        var dat = zero + zero + zero + zero + regionData;
-                                        packData += sep + k + "," + dat;
+                                        var dat = zeroZeroZeroZero + regionData;
+                                        packData += sep + UnpackKey(k) + defaultSep + dat;
                                     }
 
-                                    sep = ",";
+                                    sep = defaultSep;
                                 }
 
-                                results.Add(WrapLuaBinary(packData));
+                                results += $"{(results.Length > 0 ? defaultSep : string.Empty)}{WrapLuaBinary(packData)}";
                             }
 
-                            writer.WriteLine($"\t\ts[{regID}][\"{sk}\"] = select(t[rid], {results.Join(",")});");
+                            writer.WriteLine($"\t\ts[{regID}][\"{sk}\"] = select(t[rid], {results});");
 
                             ++offset;
 
@@ -428,117 +426,10 @@ namespace AnS.Data
                 writer.WriteLine("R[rid] = s[region] or {}");
                 writer.WriteLine("end;");
                 writer.Flush();
+                writer.Close();
+
+                GC.Collect();
             }
         }
-
-        /// <summary>
-        /// Do not run on main thread
-        /// </summary>
-        /// <param name="realm"></param>
-        /// <param name="region"></param>
-        /// <returns></returns>
-        /*public static bool Format(KVDB realm, KVDB region, StreamWriter writer)
-        {
-            Dictionary<string, Dictionary<string, string>> subs = new Dictionary<string, Dictionary<string, string>>();
-
-            int i = 0;
-            foreach (string k in region.Keys)
-            {
-                string[] split = k.Split(':');
-                if (split.Length >= 2)
-                {
-                    string baseId = split[1];
-                    string t = split[0];
-                    string bkey = t + ":" + baseId;
-
-                    Dictionary<string, string> s = null;
-                    subs.TryGetValue(bkey, out s);
-                    s = s ?? new Dictionary<string, string>();
-                    subs[bkey] = s;
-
-                    List<object> rdat = realm.GetList(k);
-                    List<object> regdat = region.GetList(k);
-
-                    if (rdat != null && rdat.Count >= 4 && regdat != null && regdat.Count >= 6)
-                    {
-                        s[k] = rdat[0].ToLong() + "," + rdat[1].ToLong() + "," + rdat[2].ToLong() + "," + rdat[3].ToLong() + "," + regdat[0].ToLong() + "," + regdat[1].ToLong() + "," + regdat[2].ToLong() + "," + regdat[3].ToLong() + "," + regdat[5].ToLong();
-                        ++i;
-                    }
-                    else if(regdat != null && regdat.Count >= 6)
-                    {
-                        s[k] = "0,0,0,0," + regdat[0].ToLong() + "," + regdat[1].ToLong() + "," + regdat[2].ToLong() + "," + regdat[3].ToLong() + "," + regdat[5].ToLong();
-                        ++i;
-                    }
-                    else if(rdat != null && rdat.Count >= 4)
-                    {
-                        s[k] = rdat[0].ToLong() + "," + rdat[1].ToLong() + "," + rdat[2].ToLong() + "," + rdat[3].ToLong() + ",0,0,0,0,0";
-                        ++i;
-                    }
-                }
-            }
-
-            // no region data so try only realm data
-            if (i == 0)
-            {
-                foreach(string k in realm.Keys)
-                {
-                    string[] split = k.Split(':');
-                    if (split.Length >= 2)
-                    {
-                        string baseId = split[1];
-                        string t = split[0];
-                        string bkey = t + ":" + baseId;
-
-                        Dictionary<string, string> s = null;
-                        subs.TryGetValue(bkey, out s);
-                        s = s ?? new Dictionary<string, string>();
-                        subs[bkey] = s;
-
-                        List<object> rdat = realm.GetList(k);
-
-                        if (rdat != null && rdat.Count >= 4)
-                        {
-                            s[k] = rdat[0].ToLong() + "," + rdat[1].ToLong() + "," + rdat[2].ToLong() + "," + rdat[3].ToLong() + ",0,0,0,0,0";
-                            ++i;
-                        }
-                    }
-                }
-            }
-
-            //no data whatsoever so return false
-            if (i == 0)
-            {
-                return false;
-            }
-
-            writer.WriteLine("{");
-            writer.Write("[\"rawdata\"] = \"");
-            string sep = "";
-            foreach(string n in subs.Keys)
-            {
-                Dictionary<string, string> rs = subs[n];
-
-                if (!string.IsNullOrEmpty(sep))
-                {
-                    writer.Write(sep);
-                }
-
-                writer.Write("[" + n + "]{");
-
-                string innerSep = "";
-                foreach(string k in rs.Keys)
-                {
-                    writer.Write(innerSep + "[" + k + "](" + rs[k] + ")");
-                    innerSep = ",";
-                }
-
-                writer.Write("}");
-                sep = "|";
-            }
-
-            writer.Write("\"\r\n}");
-
-            return true;
-        }*/
     }
 }

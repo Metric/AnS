@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-    <Platforms>AnyCPU;x64</Platforms>
+    <Platforms>AnyCPU;x64;x86</Platforms>
     
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
@@ -10,9 +10,24 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <PlatformTarget>x64</PlatformTarget>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x86'">
     <PlatformTarget>x86</PlatformTarget>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Optimize>true</Optimize>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x86'">
+    <Optimize>true</Optimize>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PlatformTarget>x86</PlatformTarget>
   </PropertyGroup>
   <ItemGroup>
     <Compile Update="**\*.xaml.cs">
@@ -31,10 +46,10 @@
     <None Remove="UI\RealmItem.xaml" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="0.9.10" />
-    <PackageReference Include="Avalonia.Desktop" Version="0.9.10" />
-    <PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" Version="3.1.3" />
-    <PackageReference Include="Microsoft.Windows.Compatibility" Version="3.1.0" />
+    <PackageReference Include="Avalonia" Version="0.9.12" />
+    <PackageReference Include="Avalonia.Desktop" Version="0.9.12" />
+    <PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" Version="5.0.1" />
+    <PackageReference Include="Microsoft.Windows.Compatibility" Version="5.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
   </ItemGroup>
   <ItemGroup>
@@ -46,7 +61,7 @@
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System.Windows.Forms">
-      <HintPath>..\..\..\..\..\..\Program Files (x86)\dotnet\shared\Microsoft.WindowsDesktop.App\3.1.9\System.Windows.Forms.dll</HintPath>
+      <HintPath>..\..\..\..\..\..\Program Files\dotnet\shared\Microsoft.WindowsDesktop.App\3.1.9\System.Windows.Forms.dll</HintPath>
     </Reference>
   </ItemGroup>
 </Project>
