@@ -266,6 +266,11 @@ namespace AnS.Data
                         {
                             Dictionary<string, List<ItemGroup>> subgroups = null;
 
+                            if (string.IsNullOrEmpty(k))
+                            {
+                                continue;
+                            }
+
                             string rkey = UnpackKey(k);
                             string[] split = rkey.Split(":");
                             string subkey = $"{split[0]}:{split[1]}";
