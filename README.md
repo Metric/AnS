@@ -1,5 +1,5 @@
-# AnS
- AnS Data Downloader
+# AnS - Limited
+Allows you to pull up to 5 realms + region data at one time. The lua is built on the server side and thus this version requires very little system memory on your side. It is limited to 5 to prevent excess use of server system memory. (Code on this branch has not been updated yet to reflect this, refer to discord for update)
 
 # Purpose
  Downloads Auction House Data from the AnsAuctionService server.
@@ -8,8 +8,7 @@
 Windows 8+, Linux, Mac
 
 # Requirements for Any OS
-- Minimum 450MB RAM (Starts at 100MB but if you use region data then it will always use about 410MB of ram when building LUA data)
-	- Depending on feedback, the LUA generation may be transitioned to server side and thus only a file download will happen on client at that point
+- Minimum 100MB RAM
 - Hard Drive Space 150MB+
 - Requires x64 processor
 
