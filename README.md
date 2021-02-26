@@ -1,5 +1,5 @@
-# AnS
- AnS Data Downloader
+# AnS - Full
+ This version allows you to pull as many realms as you want, but will require more system memory per realm to build the final LUA data file for WoW.
 
 # Purpose
  Downloads Auction House Data from the AnsAuctionService server.
@@ -8,8 +8,7 @@
 Windows 8+, Linux, Mac
 
 # Requirements for Any OS
-- Minimum 450MB RAM (Starts at 100MB but if you use region data then it will always use about 410MB of ram when building LUA data)
-	- Depending on feedback, the LUA generation may be transitioned to server side and thus only a file download will happen on client at that point
+- Minimum 650MB RAM (Starts at 100MB but if you use region data then it will always use about 650MB of ram when building LUA data)
 - Hard Drive Space 150MB+
 - Requires x64 processor
 
