@@ -12,35 +12,55 @@ using System.Diagnostics;
 using Microsoft.Extensions.FileProviders;
 using System.Reflection;
 using System.Linq;
+using System.Threading;
+using System.Runtime.InteropServices;
 
 namespace AnS
 {
     public class MainWindow : Window
     {
-        static Dictionary<string, int> REGION_INDICES = new Dictionary<string, int>() { { "US", -1 }, { "EU", -2 } };
-        const string LUA_NAME = "Data.lua";
-        const bool IGNORE_DIFFS = true;
-
         private List<ConnectedRealm> USRealms;
         private List<ConnectedRealm> EURealms;
+
         private Dictionary<string, List<ConnectedRealm>> selected;
-        private StackPanel listViewItems;
+        
+        private StackPanel usListView;
+        private StackPanel euListView;
+        
         private TextBlock statusText;
         private ProgressBar statusProgress;
+        
         private DispatcherTimer timer;
         private DispatcherTimer realmTimer;
-        private List<RealmItem> items;
+
+        private List<RealmItem> usItems;
+        private List<RealmItem> euItems;
 
         private TextBox search;
+
         private CheckBox includeRegion;
 
         private SystemTrayIcon sysIcon;
+
         private bool exit = false;
         private bool includeRegionData = true;
         private bool syncing = false;
+        private bool listModified = false;
 
         private string filter = "";
-        private List<RealmItem> filteredItems;
+
+        private List<RealmItem> usFilteredItems;
+        private List<RealmItem> euFilteredItems;
+
+        private CancellationTokenSource ctk;
+
+        private const int QUEUE_WAIT_TIME = 60 * 1000;
+
+        protected enum RealmRegion
+        {
+            US,
+            EU
+        }
 
         public MainWindow()
         {
@@ -48,7 +68,8 @@ namespace AnS
 #if DEBUG
             this.AttachDevTools();
 #endif
-            items = new List<RealmItem>();
+            usItems = new List<RealmItem>();
+            euItems = new List<RealmItem>();
 
             search.KeyUp += Search_KeyUp;
             includeRegion.Click += IncludeRegion_Click;
@@ -75,8 +96,9 @@ namespace AnS
 
             }).ContinueWith(t =>
             {
-                CreateRealmList(USRealms, "US");
-                CreateRealmList(EURealms, "EU");
+                CreateRealmList(USRealms, usItems, usListView, RealmRegion.US);
+                CreateRealmList(EURealms, euItems, euListView, RealmRegion.EU);
+
                 Sync();
 
                 timer = new DispatcherTimer();
@@ -95,7 +117,26 @@ namespace AnS
         private void IncludeRegion_Click(object sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             includeRegionData = includeRegion.IsChecked == null ? false : includeRegion.IsChecked.Value;
-            Sync();
+
+            listModified = true;
+
+            if (ctk != null)
+            {
+                ctk.Cancel();
+                ctk = null;
+            }
+
+            ctk = new CancellationTokenSource();
+
+            Task.Delay(2000, ctk.Token).ContinueWith(t =>
+            {
+                if (t.IsCanceled || syncing)
+                {
+                    return;
+                }
+
+                Sync();
+            }, TaskScheduler.FromCurrentSynchronizationContext());
         }
 
         private void Search_KeyUp(object sender, Avalonia.Input.KeyEventArgs e)
@@ -111,22 +152,97 @@ namespace AnS
         {
             if (string.IsNullOrEmpty(filter))
             {
-                filteredItems = items.ToList();
+                usFilteredItems = usItems.ToList();
+                euFilteredItems = euItems.ToList();
             }
             else
             {
-                filteredItems = items.FindAll(m => m.Region.ToLower() == filter || m.Realm.realms.JoinNames().ToLower().Contains(filter));
+                usFilteredItems = usItems.FindAll(m => m.Realm.realms.JoinNames().ToLower().Contains(filter));
+                euFilteredItems = euItems.FindAll(m => m.Realm.realms.JoinNames().ToLower().Contains(filter));
             }
 
-            listViewItems.Children.Clear();
-            listViewItems.Children.AddRange(filteredItems);
+            usListView.Children.Clear();
+            euListView.Children.Clear();
+
+            usListView.Children.AddRange(usFilteredItems);
+            euListView.Children.AddRange(euFilteredItems);
+        }
+
+        string FormatTime(ref TimeSpan span)
+        {
+            string formatted = "";
+
+            if (Math.Floor(span.TotalDays) == 0 && Math.Floor(span.TotalHours) == 0 && Math.Floor(span.TotalMinutes) == 0)
+            {
+                formatted = (int)span.TotalSeconds + "s";
+            }
+            else if (Math.Floor(span.TotalDays) == 0 && Math.Floor(span.TotalHours) == 0)
+            {
+                formatted = (int)span.TotalMinutes + "min";
+            }
+            else if (Math.Floor(span.TotalDays) == 0)
+            {
+                formatted = (int)span.TotalHours + "hr";
+                if (span.TotalHours > 1)
+                {
+                    formatted += "s";
+                }
+            }
+            else
+            {
+                formatted = Math.Floor(span.TotalDays) + "day";
+                if (span.TotalDays > 1)
+                {
+                    formatted += "s";
+                }
+            }
+
+            return formatted;
         }
 
         private void RealmTimer_Tick(object sender, EventArgs e)
         {
             Dispatcher.UIThread.Post(() =>
             {
-                UpdateRealmList();
+                //last updated message
+                if (syncing) return;
+
+                List<int> ids = new List<int>();
+
+                foreach (string region in selected.Keys)
+                {
+                    var realms = selected[region];
+
+                    for (int i = 0; i < realms.Count; ++i)
+                    {
+                        ids.Add(realms[i].id);
+                    }
+                }
+
+                if (includeRegionData)
+                {
+                    ids.Add(-1);
+                }
+
+                if (ids.Count > 6 || ids.Count == 0 
+                || (ids.Count <= 1 && includeRegionData))
+                {
+                    statusText.Text = "";
+                    return;
+                }
+
+                var time = DataSource.GetLocalDataModified(ids.ToArray());
+
+                if (time == null)
+                {
+                    statusText.Text = "";
+                    return;
+                }
+
+                var now = DateTime.UtcNow;
+                var span = new TimeSpan(now.Ticks - time.Value.Ticks);
+
+                statusText.Text = "Updated " + FormatTime(ref span) + " ago";
             });
         }
 
@@ -134,46 +250,34 @@ namespace AnS
         {
             Dispatcher.UIThread.Post(() =>
             {
-                Sync();
+                if (ctk != null)
+                {
+                    ctk.Cancel();
+                    ctk = null;
+                }
+
+                if (!syncing)
+                {
+                    Sync();
+                }
             });
         }
 
-        private void UpdateRealmList()
-        {
-            for(int i = 0; i < items.Count; ++i)
-            {
-                RealmItem item = items[i];
-                item.UpdateTimeInfo();
-            }
-        }
-
-        private void CreateRealmList(List<ConnectedRealm> realms, string region)
+        private void CreateRealmList(List<ConnectedRealm> realms, List<RealmItem> items, StackPanel listView, RealmRegion region)
         {
             List<ConnectedRealm> select = null;
-            selected.TryGetValue(region, out select);
+            selected.TryGetValue(region.ToString(), out select);
             select = select ?? new List<ConnectedRealm>();
-
-            /*int regionIndex = -1;
-            REGION_INDICES.TryGetValue(region, out regionIndex);
-            RealmItem regionRealm = new RealmItem(new ConnectedRealm()
-            {
-                id = regionIndex,
-                realms = new List<Realm>(new Realm[] { new Realm() { id = regionIndex, name = new Dictionary<string, string>() { { "us", region } } } })
-            }, region, select.Find(m => m.id == regionIndex) != null);
-            regionRealm.OnSelect += Item_OnSelect;
-            regionRealm.OnUnselect += Item_OnUnselect;
-            listViewItems.Children.Add(regionRealm);
-            items.Add(regionRealm);*/
 
             for (int i = 0; i < realms.Count; ++i)
             {
                 ConnectedRealm r = realms[i];
 
                 bool isSelected = select.Find(m => m.id == r.id) != null;
-                RealmItem item = new RealmItem(r, region, isSelected);
+                RealmItem item = new RealmItem(r, region.ToString(), isSelected);
                 item.OnSelect += Item_OnSelect;
                 item.OnUnselect += Item_OnUnselect;
-                listViewItems.Children.Add(item);
+                listView.Children.Add(item);
                 items.Add(item);
             }
         }
@@ -195,7 +299,25 @@ namespace AnS
                 });
             }
 
-            Sync(r, region);
+            listModified = true;
+
+            if (ctk != null)
+            {
+                ctk.Cancel();
+                ctk = null;
+            }
+
+            ctk = new CancellationTokenSource();
+
+            Task.Delay(2000, ctk.Token).ContinueWith(t =>
+            {
+                if (t.IsCanceled || syncing)
+                {
+                    return;
+                }
+
+                Sync();
+            }, TaskScheduler.FromCurrentSynchronizationContext());
         }
 
         private void Item_OnSelect(string region, ConnectedRealm r)
@@ -211,192 +333,101 @@ namespace AnS
                 DataSource.Store(selected);
             });
 
-            Sync(r, region);
-        }
+            listModified = true;
 
-        private void CreateLua()
-        {
-            Debug.WriteLine("Building Lua");
-            //write to proper data file
-            string wowPath = DataSource.WoWPath;
-            if (string.IsNullOrEmpty(wowPath))
+            if (ctk != null)
             {
-                Debug.WriteLine("WoW Data Path is null");
-                return;
+                ctk.Cancel();
+                ctk = null;
             }
-            try
+
+            ctk = new CancellationTokenSource();
+
+            Task.Delay(2000, ctk.Token).ContinueWith(t =>
             {
-                string fpath = Path.Combine(wowPath, LUA_NAME);
-                using (FileStream fs = new FileStream(fpath, FileMode.Create, FileAccess.Write, FileShare.None))
+                if (t.IsCanceled || syncing)
                 {
-                    Lua.Build(selected, fs, includeRegionData);
+                    return;
                 }
-                Debug.WriteLine("Lua Built");
-            }
-            catch (Exception e)
-            {
-                Debug.WriteLine(e.ToString());
-            }
+
+                Sync();
+            }, TaskScheduler.FromCurrentSynchronizationContext());
         }
 
-        private void Sync(ConnectedRealm r, string region)
+        private void OnDownloadProgress(float f)
         {
-            syncing = true;
-
             Dispatcher.UIThread.Post(() =>
             {
-                statusText.Text = "Syncing";
-                statusProgress.Value = 0;
-            });
-
-            List<string> updated = new List<string>();
-            Task.Run(() =>
-            {
-                try
-                {
-                    if (includeRegionData && GetLatest(REGION_INDICES[region.ToUpper()], region))
-                    {
-                        updated.Add(region);
-                    }
-                }
-                catch (Exception e)
-                {
-                    Debug.WriteLine(e.ToString());
-                }
-
-                try { 
-                    if (GetLatest(r.id, region))
-                    {
-                        if (r.id < 0)
-                        {
-                            updated.Add(DataSource.REGION_KEY + " - " + r.realms.JoinNames());
-                        }
-                        else
-                        {
-                            updated.Add(region + " - " + r.realms.JoinNames());
-                        }
-                    }
-                }
-                catch (Exception e)
-                {
-                    Debug.WriteLine(e.ToString());
-                }
-
-                if (updated.Count > 0)
-                {
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        statusText.Text = "Finalizing";
-                    });
-
-                    CreateLua();
-
-                    if (sysIcon != null && sysIcon.IsActive)
-                    {
-                        Dispatcher.UIThread.Post(() =>
-                        {
-                            sysIcon.ShowInfo(updated[0]);
-                        });
-                    }
-                }
-
-                Dispatcher.UIThread.Post(() =>
-                {
-                    statusText.Text = "";
-                    statusProgress.Value = 0;
-                });
-
-                syncing = false;
+                statusText.Text = "Downloading";
+                statusProgress.Minimum = 0;
+                statusProgress.Maximum = 1;
+                statusProgress.IsVisible = true;
+                statusProgress.Value = f;
             });
         }
 
         private void Sync()
         {
+            DataSource.OnProgress += OnDownloadProgress;
+
             syncing = true;
             Dispatcher.UIThread.Post(() =>
             {
-                statusText.Text = "Syncing";
+                statusText.Text = "Requesting Lua";
+                statusProgress.Minimum = 0;
+                statusProgress.Maximum = 1;
+                statusProgress.IsVisible = false;
+                statusProgress.Value = 0;
             });
 
             List<string> updated = new List<string>();
             Task.Run(async () =>
             {
-                int totalCount = selected.Count + 1;
-                int c = 0;
+                List<int> ids = new List<int>();
 
-                HashSet<string> regionDownloaded = new HashSet<string>();
-
-                foreach (string k in selected.Keys)
+                foreach (string region in selected.Keys)
                 {
-                    List<ConnectedRealm> realms = selected[k];
-                    totalCount += realms.Count;
-                    ++c;
-
-                    try
-                    {
-                        if (!regionDownloaded.Contains(k))
-                        {
-                            if (includeRegionData && GetLatest(REGION_INDICES[k.ToUpper()], k))
-                            {
-                                updated.Add(k);
-                            }
-
-                            regionDownloaded.Add(k);
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.WriteLine(e.ToString());
-                    }
+                    var realms = selected[region];
 
                     for (int i = 0; i < realms.Count; ++i)
                     {
-                        ConnectedRealm r = realms[i];
-                        ++c;
-
-                        try
-                        {
-                            if (GetLatest(r.id, k))
-                            {
-                                //if (r.id < 0)
-                                //{
-                                //    updated.Add(DataSource.REGION_KEY + " - " + r.realms.JoinNames());
-                                //}
-                                //else
-                                //{
-                                    updated.Add(k + " - " + r.realms.JoinNames());
-                                //}
-                            }
-                        }
-                        catch (Exception e)
-                        {
-                            Debug.WriteLine(e.ToString());
-                        }
-
-                        Dispatcher.UIThread.Post(() =>
-                        {
-                            statusProgress.Value = (float)c / (float)totalCount;
-                        });
+                        ids.Add(realms[i].id);
+                        updated.Add(region.ToUpper() + " - " + realms[i].realms.JoinNames());
                     }
                 }
 
-                //if (updated.Count > 0)
-                //{
+                if (includeRegionData)
+                {
+                    ids.Add(-1);
+                }
+
+                if (ids.Count > 6 || (ids.Count <= 1 && includeRegionData) 
+                || ids.Count == 0)
+                {
+                    DataSource.OnProgress -= OnDownloadProgress;
+                    syncing = false;
+                    return;
+                }
+
+                bool queued = false;
+                bool success = GetLatest(out queued, listModified, ids.ToArray());
+
+                while (queued)
+                {
                     Dispatcher.UIThread.Post(() =>
                     {
-                        statusText.Text = "Finalizing";
+                        statusText.Text = "Waiting for Lua";
+                        statusProgress.Minimum = 0;
+                        statusProgress.Maximum = 1;
+                        statusProgress.IsVisible = false;
+                        statusProgress.Value = 0;
                     });
 
-                    CreateLua();
-                //}
+                    await Task.Delay(QUEUE_WAIT_TIME);
+                    success = GetLatest(out queued, listModified || queued, ids.ToArray());
+                }
 
-                Dispatcher.UIThread.Post(() =>
-                {
-                    statusText.Text = "";
-                    statusProgress.Value = 0;
-                });
-
-                if (sysIcon != null && sysIcon.IsActive)
+                if (sysIcon != null && sysIcon.IsActive && success)
                 {
                     for (int i = 0; i < updated.Count; ++i)
                     {
@@ -409,125 +440,64 @@ namespace AnS
                     }
                 }
 
-                syncing = false;
-            });
-        }
+                DataSource.OnProgress -= OnDownloadProgress;
 
-        private bool GetLatest(int id, string region)
-        {
-            if (!DataSource.HasLocalData(id, region))
-            {
-                Debug.WriteLine("No data exists, getting new.");
-                if (DataSource.GetServerData(id, region))
+                if (!success)
                 {
-                    return true;
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        statusText.Text = "Failed to Update";
+                        statusProgress.Minimum = 0;
+                        statusProgress.Maximum = 1;
+                        statusProgress.IsVisible = false;
+                        statusProgress.Value = 0;
+                    });
+
+                    await Task.Delay(2000);
                 }
                 else
                 {
-                    Debug.WriteLine("failed to get server data");
+                    listModified = false;
                 }
 
+                Dispatcher.UIThread.Post(() =>
+                {
+                    statusText.Text = "";
+                    statusProgress.Minimum = 0;
+                    statusProgress.Maximum = 1;
+                    statusProgress.IsVisible = false;
+                    statusProgress.Value = 0;
+                });
+
+                syncing = false;
+
+                RealmTimer_Tick(null, null);
+            });
+        }
+
+        private bool GetLatest(out bool queued, bool modified, params int[] id)
+        {
+            queued = false;
+
+            if (id == null || id.Length == 0)
+            {
                 return false;
             }
 
-            if (DataSource.HasLocalData(id, region))
+            DateTime? localModified = DataSource.GetLocalDataModified(id);
+            DateTime? serverModified = DataSource.GetServerDataModified(id);
+
+            if (serverModified == null || localModified == null)
             {
-                DateTime localModified = DataSource.GetLocalDataModified(id, region);
-                DateTime? serverModified = DataSource.GetServerDataModified(id, region);
+                return DataSource.GetServerData(out queued, id);
+            }
 
-                if (serverModified == null)
-                {
-                    return false;
-                }
+            Debug.WriteLine("local modified: " + localModified.ToString());
+            Debug.WriteLine("server modified: " + serverModified.Value.ToString());
 
-                Debug.WriteLine("local modified: " + localModified.ToString());
-                Debug.WriteLine("server modified: " + serverModified.Value.ToString());
-
-                if (localModified < serverModified.Value)
-                {
-                    int hourDiff = 0;
-                    int dayDiff = 0;
-
-                    if (serverModified.Value.Hour < localModified.Hour)
-                    {
-                        hourDiff = serverModified.Value.Hour - localModified.Hour + 24;
-                    }
-                    else
-                    {
-                        hourDiff = serverModified.Value.Hour - localModified.Hour;
-                    }
-
-                    if ((int)serverModified.Value.DayOfWeek < (int)localModified.DayOfWeek)
-                    {
-                        dayDiff = (int)serverModified.Value.DayOfWeek - (int)localModified.DayOfWeek + 7;
-                    }
-                    else
-                    {
-                        dayDiff = (int)serverModified.Value.DayOfWeek - (int)localModified.DayOfWeek;
-                    }
-
-                    if (hourDiff > 4 || dayDiff > 1 || IGNORE_DIFFS)
-                    {
-                        Debug.WriteLine("too much difference between local and server time. Downloading full.");
-                        //too much difference just pull the full latest
-                        if (DataSource.GetServerData(id, region))
-                        {
-                            return true;
-                        }
-
-                        return false;
-                    }
-                    else if(hourDiff <= 4 && hourDiff > 0 && dayDiff <= 1)
-                    {
-                        bool mergeFailed = false;
-                        int hour = (localModified.Hour + 1) % 24;
-                        for (int i = 0; i < hourDiff; ++i)
-                        {
-                            int rhour = (hour + i) % 24;
-                            Debug.WriteLine("trying to get data diff: " + rhour);
-                            if (DataSource.GetServerDataDiff(id, region, rhour))
-                            {
-                                Debug.WriteLine("trying to merge diff");
-                                if (!DataSource.Merge(id, region))
-                                {
-                                    Debug.WriteLine("merge failed");
-                                    mergeFailed = true;
-                                    //if we failed to merge
-                                    //then just pull full
-                                    if (DataSource.GetServerData(id, region))
-                                    {
-                                        return true;
-                                    }
-                                    else
-                                    {
-                                        Debug.WriteLine("failed to get server data on merge");
-                                    }
-                                    break;
-                                }
-                                Debug.WriteLine("merge successful");
-                            }
-                            else
-                            {
-                                Debug.WriteLine("failed to get data diff");
-                                mergeFailed = true;
-                                if (DataSource.GetServerData(id, region))
-                                {
-                                    return true;
-                                }
-                                else
-                                {
-                                    Debug.WriteLine("failed to get server data on non merge");
-                                }
-                                break;
-                            }
-                        }
-
-                        if(!mergeFailed)
-                        {
-                            return true;
-                        }
-                    }
-                }
+            if (localModified.Value < serverModified.Value || modified)
+            {
+                return DataSource.GetServerData(out queued, id);
             }
 
             return false;
@@ -544,15 +514,21 @@ namespace AnS
             AvaloniaXamlLoader.Load(this);
             LoadIcon();
 
-            sysIcon = new SystemTrayIcon();
-            sysIcon.OnShow += SysIcon_OnShow;
-            sysIcon.OnExit += SysIcon_OnExit;
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                sysIcon = new SystemTrayIcon();
+                sysIcon.OnShow += SysIcon_OnShow;
+                sysIcon.OnExit += SysIcon_OnExit;
 
-            this.Closing += MainWindow_Closing;
+                this.Closing += MainWindow_Closing;
+            }
 
-            listViewItems = this.FindControl<StackPanel>("ListViewItems");
+            usListView = this.FindControl<StackPanel>("USListView");
+            euListView = this.FindControl<StackPanel>("EUListView");
+
             statusText = this.FindControl<TextBlock>("StatusText");
             statusProgress = this.FindControl<ProgressBar>("StatusProgress");
+            
             search = this.FindControl<TextBox>("Search");
             includeRegion = this.Find<CheckBox>("IncludeRegion");
         }

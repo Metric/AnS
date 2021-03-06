@@ -2,7 +2,11 @@
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+
+#if Windows
 using System.Windows.Forms;
+#endif
+
 using System.IO;
 using Microsoft.Extensions.FileProviders;
 using System.Reflection;
@@ -15,8 +19,9 @@ namespace AnS.UI
         public event NotifEvent OnShow;
         public event NotifEvent OnExit;
 
+        #if Windows
         private NotifyIcon icon;
-
+        #endif
 
         public bool IsActive { get; protected set; }
 
@@ -29,21 +34,25 @@ namespace AnS.UI
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                IsActive = true;
-                icon = new NotifyIcon();
+                #if Windows
+                    IsActive = true;
+                    icon = new NotifyIcon();
 
-                var embeddedProvider = new EmbeddedFileProvider(Assembly.GetExecutingAssembly());
+                    var embeddedProvider = new EmbeddedFileProvider(Assembly.GetExecutingAssembly());
                 
-                icon.Icon = new System.Drawing.Icon(embeddedProvider.GetFileInfo("Icons\\ansicon.ico").CreateReadStream(), new System.Drawing.Size(16, 16));
-                icon.Visible = true;
-                icon.ContextMenuStrip = new ContextMenuStrip();
-                icon.ContextMenuStrip.Items.Add("Show");
-                icon.ContextMenuStrip.Items.Add("Exit");
-                icon.ContextMenuStrip.Items[0].Click += Show_Click;
-                icon.ContextMenuStrip.Items[1].Click += Exit_Click;
-                icon.DoubleClick += Icon_DoubleClick;
-                icon.Text = "AnS";
-                icon.Disposed += Icon_Disposed;
+                    icon.Icon = new System.Drawing.Icon(embeddedProvider.GetFileInfo("Icons\\ansicon.ico").CreateReadStream(), new System.Drawing.Size(16, 16));
+                    icon.Visible = true;
+                    icon.ContextMenuStrip = new ContextMenuStrip();
+                    icon.ContextMenuStrip.Items.Add("Show");
+                    icon.ContextMenuStrip.Items.Add("Exit");
+                    icon.ContextMenuStrip.Items[0].Click += Show_Click;
+                    icon.ContextMenuStrip.Items[1].Click += Exit_Click;
+                    icon.DoubleClick += Icon_DoubleClick;
+                    icon.Text = "AnS";
+                    icon.Disposed += Icon_Disposed;
+                #else
+                    IsActive = false;
+                #endif
             }
             else
             {
@@ -65,9 +74,11 @@ namespace AnS.UI
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
+                #if Windows
                 icon.BalloonTipText = msg;
                 icon.BalloonTipIcon = ToolTipIcon.None;
                 icon.ShowBalloonTip(2000);
+                #endif
             }
         }
 
@@ -81,4 +92,5 @@ namespace AnS.UI
             OnShow?.Invoke();   
         }
     }
+
 }

@@ -35,60 +35,18 @@ namespace AnS.UI
             UpdateTimeInfo();
         }
 
-        string FormatTime(ref TimeSpan span)
-        {
-            string formatted = "";
-
-            if (Math.Floor(span.TotalDays) == 0 && Math.Floor(span.TotalHours) == 0 && Math.Floor(span.TotalMinutes) == 0)
-            {
-                formatted = (int)span.TotalSeconds + "s";
-            }
-            else if(Math.Floor(span.TotalDays) == 0 && Math.Floor(span.TotalHours) == 0)
-            {
-                formatted = (int)span.TotalMinutes + "min";
-            }
-            else if(Math.Floor(span.TotalDays) == 0)
-            {
-                formatted = (int)span.TotalHours + "hr";
-                if (span.TotalHours > 1)
-                {
-                    formatted += "s";
-                }
-            }
-            else
-            {
-                formatted = Math.Floor(span.TotalDays) + "day";
-                if (span.TotalDays > 1)
-                {
-                    formatted += "s";
-                }
-            }
-
-            return formatted;
-        }
-
         public void UpdateTimeInfo()
         {
             ConnectedRealm r = Realm;
             string region = Region;
 
-            string lastUpdate = "";
-
-
-            if (DataSource.HasLocalData(r.id, region))
-            {
-                DateTime time = DataSource.GetLocalDataModified(r.id, region);
-                TimeSpan diff = new TimeSpan(DateTime.UtcNow.Ticks - time.Ticks);
-                lastUpdate = " - Updated " + FormatTime(ref diff) + " ago";
-            }
-
             if (region.Equals(r.realms.JoinNames()) || r.id < 0)
             {
-                serverName.Text = DataSource.REGION_KEY + " - " + region.ToUpper() + lastUpdate;
+                serverName.Text = DataSource.REGION_KEY + " - " + region.ToUpper();
             }
             else
             {
-                serverName.Text = region.ToUpper() + " - " + r.realms.JoinNames() + lastUpdate;
+                serverName.Text = region.ToUpper() + " - " + r.realms.JoinNames();
             }
         }
 

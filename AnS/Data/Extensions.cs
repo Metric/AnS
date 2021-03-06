@@ -2,11 +2,38 @@
 using System.Collections.Generic;
 using System.Text;
 using System.Linq;
+using System.Security.Cryptography;
 
 namespace AnS.Data
 {
     public static class StringExtension
     {
+        private static readonly uint[] HEX_LOOKUP = CreateHexLookup();
+
+        private static uint[] CreateHexLookup()
+        {
+            var result = new uint[256];
+            for (int i = 0; i < 256; i++)
+            {
+                string s = i.ToString("X2");
+                result[i] = ((uint)s[0]) + ((uint)s[1] << 16);
+            }
+            return result;
+        }
+
+        public static string ToHex(this byte[] bytes)
+        {
+            var lookup32 = HEX_LOOKUP;
+            var result = new char[bytes.Length * 2];
+            for (int i = 0; i < bytes.Length; i++)
+            {
+                var val = lookup32[bytes[i]];
+                result[2 * i] = (char)val;
+                result[2 * i + 1] = (char)(val >> 16);
+            }
+            return new string(result);
+        }
+
         public static string Base64(this string s)
         {
             byte[] bytes = Encoding.UTF8.GetBytes(s);
@@ -16,6 +43,19 @@ namespace AnS.Data
         public static byte[] Base64Decode(this string s)
         {
             return Convert.FromBase64String(s);
+        }
+
+        public static string Join(this int[] nums, string sep = ",")
+        {
+            string s = "";
+            string ss = "";
+            for (int i = 0; i < nums.Length; ++i)
+            {
+                s += ss + nums[i];
+                ss = sep;
+            }
+
+            return s;
         }
 
         public static List<long> ToLongList(this string s, string sep = ",")
@@ -265,6 +305,31 @@ namespace AnS.Data
         public static string ToBase93(this uint i)
         {
             return Base93.Encode(i);
+        }
+
+        public static string VariableHexHash(this uint[] s)
+        {
+            List<byte> buffer = new List<byte>();
+
+            for (int i = 0; i < s.Length; ++i)
+            {
+                uint v = s[i];
+
+                if (v <= byte.MaxValue)
+                {
+                    buffer.Add((byte)v);
+                }
+                else if (v <= ushort.MaxValue)
+                {
+                    buffer.AddRange(BitConverter.GetBytes((ushort)v));
+                }
+                else
+                {
+                    buffer.AddRange(BitConverter.GetBytes(v));
+                }
+            }
+
+            return buffer.ToArray().ToHex();
         }
     }
 

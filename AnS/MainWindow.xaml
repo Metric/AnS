@@ -9,14 +9,25 @@
         Title="AnS">
   <Grid Background="#ff1f1f1f">
     <TextBox Name="Search" Height="32" HorizontalAlignment="Stretch" Background="White" CaretBrush="Black" Foreground="Black" Watermark="Search..." VerticalAlignment="Top" AcceptsReturn="False" AcceptsTab="False"></TextBox>
-    <ScrollViewer  Margin="0,32,0,54">
-      <StackPanel Name="ListViewItems">
-        
-      </StackPanel>
-    </ScrollViewer>
+    <TabControl Margin="0,16,0,27" Background="#f1f1f1">
+      <TabItem Header="US Region">
+        <ScrollViewer Background="Black">
+          <StackPanel Name="USListView">
+
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+      <TabItem Header="EU Region">
+        <ScrollViewer Background="Black">
+          <StackPanel Name="EUListView">
+            
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+    </TabControl>
     <Grid Background="#ff111111" Height="54" VerticalAlignment="Bottom">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="128"></ColumnDefinition>
+        <ColumnDefinition Width="172"></ColumnDefinition>
         <ColumnDefinition Width="*"></ColumnDefinition>
         <ColumnDefinition Width="*"></ColumnDefinition>
       </Grid.ColumnDefinitions>

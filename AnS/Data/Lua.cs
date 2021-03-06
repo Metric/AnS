@@ -46,6 +46,17 @@ namespace AnS.Data
             return "[[" + s + "]]";
         }
 
+
+        /// <summary>
+        /// unpacks region values
+        /// the values are in the following order
+        /// [min,market]
+        /// multiple by 100 to get full copper
+        /// value for each, but you will need
+        /// to store in a long / uint64
+        /// </summary>
+        /// <param name="v">The v.</param>
+        /// <returns></returns>
         protected static uint[] UnpackRegionValues(string v)
         {
             uint[] values = new uint[2];
@@ -59,6 +70,17 @@ namespace AnS.Data
             return values;
         }
 
+
+        /// <summary>
+        /// unpacks realm values
+        /// the values are in the following order
+        /// [min,recent,3day,market]
+        /// multiple by 100 to get full copper
+        /// value for each, but you will need
+        /// to store in a long / uint64
+        /// </summary>
+        /// <param name="v">The v.</param>
+        /// <returns></returns>
         protected static uint[] UnpackValues(string v)
         {
             uint[] values = new uint[4];
@@ -156,6 +178,16 @@ namespace AnS.Data
             }
         }
 
+        protected static List<T> Filled<T>(T k, int c)
+        {
+            List<T> l = new List<T>(c);
+            for (int i = 0; i < c; ++i)
+            {
+                l.Add(k);
+            }
+            return l;
+        }
+
         /// <summary>
         /// Do not run on main thread
         /// </summary>
@@ -186,27 +218,16 @@ namespace AnS.Data
 
                 foreach (string region in selected.Keys)
                 {
-                    Dictionary<string, Dictionary<string, List<ItemGroup>>> all = new Dictionary<string, Dictionary<string, List<ItemGroup>>>();
+                    Dictionary<string, Dictionary<string, List<uint[]>>> all = new Dictionary<string, Dictionary<string, List<uint[]>>>();
                     List<ConnectedRealm> realms = selected[region];
 
                     string regID = "\"" + region.ToUpper() + "\"";
                     writer.WriteLine("\ts[" + regID + "] = {};");
-
-                    KVDB regionDB = new KVDB(directoryPath, region);
-                    if (includeRegion)
-                    {
-                        regionDB.Load();
-                    }
+                    writer.WriteLine("\tsd[" + regID + "] = {};");
 
                     for (int i = 0; i < realms.Count; ++i)
                     {
                         ConnectedRealm r = realms[i];
-                        // skip selected region dbs
-                        // since that is already handled above
-                        if (region.Equals(r.realms.JoinNames()) || r.id < 0)
-                        {
-                            continue;
-                        }
 
                         KVDB realm = new KVDB(directoryPath, region + "-" + r.id);
                         realm.Load();
@@ -237,17 +258,17 @@ namespace AnS.Data
                             string rkey = UnpackKey(k);
                             string[] split = rkey.Split(":");
                             string subkey = $"{split[0]}:{split[1]}";
-                            Dictionary<string, List<ItemGroup>> groups = null;
+                            Dictionary<string, List<uint[]>> groups = null;
                             all.TryGetValue(subkey, out groups);
 
-                            groups ??= new Dictionary<string, List<ItemGroup>>();
+                            groups ??= new Dictionary<string, List<uint[]>>();
                             all[subkey] = groups;
 
-                            List<ItemGroup> group = null;
+                            List<uint[]> group = null;
                             groups.TryGetValue(k, out group);
-                            group ??= new List<ItemGroup>();
+                            group ??= Filled<uint[]>(null, realms.Count);
                             groups[k] = group;
-                            group.Add(new ItemGroup(r, UnpackValues(d), i));
+                            group[i] = UnpackValues(d);
                         }
 
                         realm.Close();
@@ -255,16 +276,20 @@ namespace AnS.Data
                         GC.Collect();
                     }
 
-                    if (includeRegion && regionDB.Keys.Count() > 0)
+                    KVDB regionDB = null;
+                    if (includeRegion)
                     {
-                        int tcount = 1;
-                        int offset = 0;
+                        regionDB = new KVDB(directoryPath, region);
+                        regionDB.Load();
+                    }
 
+                    if (regionDB != null)
+                    { 
                         Debug.WriteLine(regionDB.Keys.Count());
 
                         foreach(string k in regionDB.Keys)
                         {
-                            Dictionary<string, List<ItemGroup>> subgroups = null;
+                            Dictionary<string, List<uint[]>> subgroups = null;
 
                             if (string.IsNullOrEmpty(k))
                             {
@@ -276,7 +301,7 @@ namespace AnS.Data
                             string subkey = $"{split[0]}:{split[1]}";
 
                             all.TryGetValue(subkey, out subgroups);
-                            subgroups ??= new Dictionary<string, List<ItemGroup>>();
+                            subgroups ??= new Dictionary<string, List<uint[]>>();
                             all[subkey] = subgroups;
                             if(!subgroups.ContainsKey(k))
                             {
@@ -287,148 +312,94 @@ namespace AnS.Data
                         GC.Collect();
 
                         Debug.WriteLine(all.Count);
-
-                        foreach (string sk in all.Keys)
-                        {
-                            List<ItemGroup> g = null;
-
-                            if (offset % MAX_GROUP_SIZE == 0)
-                            {
-                                writer.WriteLine($"\tsd[{tcount++}] = function()");
-                            }
-
-                            string results = "";
-
-                            for (int i = 0; i < realms.Count; ++i)
-                            {
-                                string sep = "";
-                                string packData = "";
-
-                                foreach (string k in all[sk].Keys)
-                                {
-                                    g = all[sk][k];
-
-                                    string regionValue = regionDB.GetString(k);
-
-                                    if (!string.IsNullOrEmpty(regionValue))
-                                    {
-                                        uint[] values = UnpackRegionValues(regionValue);
-                                        regionData = values[0].ToBase93() + values[1].ToBase93();
-                                    }
-                                    else
-                                    {
-                                        regionData = zeroZero;
-                                    }
-
-                                    var r = realms[i];
-                                    var rg = g != null ? g.Find(m => m.realm.id == r.id) : null;
-
-                                    if (rg != null)
-                                    {
-                                        var rdat = rg.data;
-                                        var dat = rdat[1].ToBase93() + rdat[2].ToBase93() + rdat[3].ToBase93() + rdat[0].ToBase93() + regionData;
-                                        packData += sep + UnpackKey(k) + defaultSep + dat;
-                                    }
-                                    else
-                                    {
-                                        var dat = zeroZeroZeroZero + regionData;
-                                        packData += sep + UnpackKey(k) + defaultSep + dat;
-                                    }
-
-                                    sep = defaultSep;
-                                }
-
-                                results += $"{(results.Length > 0 ? defaultSep : string.Empty)}{WrapLuaBinary(packData)}";
-                            }
-
-                            writer.WriteLine($"\t\ts[{regID}][\"{sk}\"] = select(t[rid], {results});");
-                            ++offset;
-
-                            if (offset % MAX_GROUP_SIZE == 0)
-                            {
-                                writer.WriteLine("\tend;");
-                            }
-                        }
-
-                        if (offset % MAX_GROUP_SIZE != 0)
-                        {
-                            writer.WriteLine("\tend;");
-                        }
                     }
-                    else
+
+
+                    int tcount = 1;
+                    int offset = 0;
+
+                    foreach(string sk in all.Keys)
                     {
-                        int tcount = 1;
-                        int offset = 0;
+                        List<uint[]> g = null;
 
-                        foreach(string sk in all.Keys)
+                        if (offset % MAX_GROUP_SIZE == 0)
                         {
-                            List<ItemGroup> g = null;
-
-                            if (offset % MAX_GROUP_SIZE == 0)
-                            {
-                                writer.WriteLine($"\tsd[{tcount++}] = function()");
-                            }
-
-                            string results = "";
-
-                            for (int i = 0; i < realms.Count; ++i)
-                            {
-                                string sep = "";
-                                string packData = "";
-
-                                foreach (string k in all[sk].Keys)
-                                {
-                                    g = all[sk][k];
-
-                                    var r = realms[i];
-                                    var rg = g != null ? g.Find(m => m.realm.id == r.id) : null;
-
-                                    if (rg != null)
-                                    {
-                                        var rdat = rg.data;
-                                        var dat = rdat[1].ToBase93() + rdat[2].ToBase93() + rdat[3].ToBase93() + rdat[0].ToBase93() + regionData;
-                                        packData += sep + UnpackKey(k) + defaultSep + dat;
-                                    }
-                                    else
-                                    {
-                                        var dat = zeroZeroZeroZero + regionData;
-                                        packData += sep + UnpackKey(k) + defaultSep + dat;
-                                    }
-
-                                    sep = defaultSep;
-                                }
-
-                                results += $"{(results.Length > 0 ? defaultSep : string.Empty)}{WrapLuaBinary(packData)}";
-                            }
-
-                            writer.WriteLine($"\t\ts[{regID}][\"{sk}\"] = select(t[rid], {results});");
-
-                            ++offset;
-
-                            if (offset % MAX_GROUP_SIZE == 0)
-                            {
-                                writer.WriteLine("\tend;");
-                            }
+                            writer.WriteLine($"\tsd[{regID}][{tcount++}] = function()");
                         }
 
-                        if (offset % MAX_GROUP_SIZE != 0)
+                        writer.Write($"\t\ts[{regID}][\"{sk}\"] = select(t[rid],");
+
+                        for (int i = 0; i < realms.Count; ++i)
+                        {
+                            string sep = "";
+                            string packData = "";
+
+                            foreach (string k in all[sk].Keys)
+                            {
+                                g = all[sk][k];
+
+                                string regionValue = regionDB != null ? regionDB.GetString(k) : null;
+
+                                if (!string.IsNullOrEmpty(regionValue))
+                                {
+                                    uint[] values = UnpackRegionValues(regionValue);
+                                    regionData = values[0].ToBase93() + values[1].ToBase93();
+                                }
+                                else
+                                {
+                                    regionData = zeroZero;
+                                }
+
+                                var rdat = g != null ? g[i] : null;
+                                if (rdat != null)
+                                {
+                                    var dat = rdat[1].ToBase93() + rdat[2].ToBase93() + rdat[3].ToBase93() + rdat[0].ToBase93() + regionData;
+                                    packData += sep + UnpackKey(k) + defaultSep + dat;
+                                }
+                                else
+                                {
+                                    var dat = zeroZeroZeroZero + regionData;
+                                    packData += sep + UnpackKey(k) + defaultSep + dat;
+                                }
+
+                                sep = defaultSep;
+                            }
+
+                            string ssep = i > 0 ? defaultSep : string.Empty;
+                            writer.Write($"{ssep}{WrapLuaBinary(packData)}");
+
+                            GC.Collect();
+                        }
+
+                        writer.WriteLine(");");
+
+                        ++offset;
+
+                        if (offset % MAX_GROUP_SIZE == 0)
                         {
                             writer.WriteLine("\tend;");
                         }
                     }
 
-                    regionDB.Close();
+                    if (offset % MAX_GROUP_SIZE != 0)
+                    {
+                        writer.WriteLine("\tend;");
+                    }
+
+                    regionDB?.Close();
+
+                    GC.Collect();
                 }
 
-                writer.WriteLine("if (t[rid]) then");
-                writer.WriteLine("\tfor i = 1, #sd do");
-                writer.WriteLine("\t\tsd[i]();");
+                writer.WriteLine("\tif (t[rid] and sd[region]) then");
+                writer.WriteLine("\t\tfor i = 1, #sd[region] do");
+                writer.WriteLine("\t\t\tsd[region][i]();");
+                writer.WriteLine("\t\tend");
                 writer.WriteLine("\tend");
-                writer.WriteLine("end");
 
-                writer.WriteLine("wipe(sd)");
+                writer.WriteLine("\twipe(sd)");
 
-                writer.WriteLine("R[rid] = s[region] or {}");
+                writer.WriteLine("\tR[rid] = s[region] or {}");
                 writer.WriteLine("end;");
                 writer.Flush();
                 writer.Close();
