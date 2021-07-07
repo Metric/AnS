@@ -9,21 +9,7 @@ using VCDiff.Shared;
 namespace AnS.Data
 { 
     public class Lua
-    {
-        protected class ItemGroup
-        {
-            public ConnectedRealm realm;
-            public uint[] data;
-            public int index;
-
-            public ItemGroup(ConnectedRealm r, uint[] d, int idx)
-            {
-                data = d;
-                realm = r;
-                index = idx;
-            }
-        }
-
+    { 
         protected static string WrapLuaBinary(string s)
         {
             if (s.Contains("===]") || s.Contains("[===") || s.Contains("]===") || s.Contains("===["))
@@ -53,7 +39,7 @@ namespace AnS.Data
         /// [min,market]
         /// multiple by 100 to get full copper
         /// value for each, but you will need
-        /// to store in a long / uint64
+        /// to store in a ulong / uint64
         /// </summary>
         /// <param name="v">The v.</param>
         /// <returns></returns>
@@ -77,7 +63,7 @@ namespace AnS.Data
         /// [min,recent,3day,market]
         /// multiple by 100 to get full copper
         /// value for each, but you will need
-        /// to store in a long / uint64
+        /// to store in a ulong / uint64
         /// </summary>
         /// <param name="v">The v.</param>
         /// <returns></returns>
@@ -206,7 +192,7 @@ namespace AnS.Data
 
             using (StreamWriter writer = new StreamWriter(stream))
             {
-                string directoryPath = DataSource.DirectoryPath;
+                string directoryPath = DataSource.CachePath;
 
                 writer.WriteLine("local Ans = select(2, ...);");
                 writer.WriteLine("local R = {};");
@@ -218,8 +204,13 @@ namespace AnS.Data
 
                 foreach (string region in selected.Keys)
                 {
-                    Dictionary<string, Dictionary<string, List<uint[]>>> all = new Dictionary<string, Dictionary<string, List<uint[]>>>();
+                    Dictionary<string, Dictionary<string, Dictionary<int, uint[]>>> all = new Dictionary<string, Dictionary<string, Dictionary<int, uint[]>>>();
                     List<ConnectedRealm> realms = selected[region];
+
+                    if (realms.Count == 0)
+                    {
+                        continue;
+                    }
 
                     string regID = "\"" + region.ToUpper() + "\"";
                     writer.WriteLine("\ts[" + regID + "] = {};");
@@ -258,22 +249,20 @@ namespace AnS.Data
                             string rkey = UnpackKey(k);
                             string[] split = rkey.Split(":");
                             string subkey = $"{split[0]}:{split[1]}";
-                            Dictionary<string, List<uint[]>> groups = null;
+                            Dictionary<string, Dictionary<int, uint[]>> groups = null;
                             all.TryGetValue(subkey, out groups);
 
-                            groups ??= new Dictionary<string, List<uint[]>>();
+                            groups ??= new Dictionary<string, Dictionary<int, uint[]>>();
                             all[subkey] = groups;
 
-                            List<uint[]> group = null;
+                            Dictionary<int, uint[]> group = null;
                             groups.TryGetValue(k, out group);
-                            group ??= Filled<uint[]>(null, realms.Count);
+                            group ??= new Dictionary<int, uint[]>();
                             groups[k] = group;
                             group[i] = UnpackValues(d);
                         }
 
                         realm.Close();
-
-                        GC.Collect();
                     }
 
                     KVDB regionDB = null;
@@ -289,7 +278,7 @@ namespace AnS.Data
 
                         foreach(string k in regionDB.Keys)
                         {
-                            Dictionary<string, List<uint[]>> subgroups = null;
+                            Dictionary<string, Dictionary<int, uint[]>> subgroups = null;
 
                             if (string.IsNullOrEmpty(k))
                             {
@@ -301,15 +290,13 @@ namespace AnS.Data
                             string subkey = $"{split[0]}:{split[1]}";
 
                             all.TryGetValue(subkey, out subgroups);
-                            subgroups ??= new Dictionary<string, List<uint[]>>();
+                            subgroups ??= new Dictionary<string, Dictionary<int, uint[]>>();
                             all[subkey] = subgroups;
                             if(!subgroups.ContainsKey(k))
                             {
                                 subgroups[k] = null;
                             }
                         }
-
-                        GC.Collect();
 
                         Debug.WriteLine(all.Count);
                     }
@@ -320,7 +307,7 @@ namespace AnS.Data
 
                     foreach(string sk in all.Keys)
                     {
-                        List<uint[]> g = null;
+                        Dictionary<int, uint[]> g = null;
 
                         if (offset % MAX_GROUP_SIZE == 0)
                         {
@@ -350,7 +337,12 @@ namespace AnS.Data
                                     regionData = zeroZero;
                                 }
 
-                                var rdat = g != null ? g[i] : null;
+                                uint[] rdat = null;
+                                if (g != null)
+                                {
+                                    g.TryGetValue(i, out rdat);
+                                }
+
                                 if (rdat != null)
                                 {
                                     var dat = rdat[1].ToBase93() + rdat[2].ToBase93() + rdat[3].ToBase93() + rdat[0].ToBase93() + regionData;
@@ -367,8 +359,6 @@ namespace AnS.Data
 
                             string ssep = i > 0 ? defaultSep : string.Empty;
                             writer.Write($"{ssep}{WrapLuaBinary(packData)}");
-
-                            GC.Collect();
                         }
 
                         writer.WriteLine(");");
@@ -387,8 +377,6 @@ namespace AnS.Data
                     }
 
                     regionDB?.Close();
-
-                    GC.Collect();
                 }
 
                 writer.WriteLine("\tif (t[rid] and sd[region]) then");
@@ -397,14 +385,17 @@ namespace AnS.Data
                 writer.WriteLine("\t\tend");
                 writer.WriteLine("\tend");
 
-                writer.WriteLine("\twipe(sd)");
+                writer.WriteLine("\twipe(sd);");
 
-                writer.WriteLine("\tR[rid] = s[region] or {}");
+                writer.WriteLine("\tR[rid] = s[region] or {};");
                 writer.WriteLine("end;");
                 writer.Flush();
-                writer.Close();
 
-                GC.Collect();
+                //esnure proper length is set
+                //for the underlying file
+                //thus truncating it
+                stream.SetLength(stream.Position);
+                writer.Close();
             }
         }
     }

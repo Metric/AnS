@@ -30,11 +30,13 @@
         <ColumnDefinition Width="172"></ColumnDefinition>
         <ColumnDefinition Width="*"></ColumnDefinition>
         <ColumnDefinition Width="*"></ColumnDefinition>
+        <ColumnDefinition Width="*"></ColumnDefinition>
       </Grid.ColumnDefinitions>
       
       <TextBlock Name="StatusText" Grid.Column="0" Text="" Foreground="White" FontSize="18" VerticalAlignment="Center" Margin="20,0,0,0"></TextBlock>
       <ProgressBar Name="StatusProgress" Grid.Column="1" Margin="10,0,10,0" Height="4" HorizontalAlignment="Stretch" Background="Transparent" Foreground="#FF5555FF" Value="0" Maximum="1.0"></ProgressBar>
       <CheckBox Name="IncludeRegion" Grid.Column="2" HorizontalAlignment="Right" ToolTip.Tip="Unchecking this will only use individual realm data; may reduce in game memory usage depending on realm." Background="Black" Foreground="DarkGray" Height="32" Margin="10,0,10,0" Content="Include Region Data"></CheckBox>
+      <CheckBox Name="FullMode" Grid.Column="3" HorizontalAlignment="Right" ToolTip.Tip="Checking this will download raw db files and build the lua file on your machine. You are not limited to 5 realms with this option." Background="Black" Foreground="DarkGray" Height="32" Margin="10,0,10,0" Content="Full Mode"></CheckBox>
     </Grid>
   </Grid>
 </Window>

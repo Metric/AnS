@@ -40,14 +40,22 @@ namespace AnS.UI
             ConnectedRealm r = Realm;
             string region = Region;
 
-            if (region.Equals(r.realms.JoinNames()) || r.id < 0)
+            DateTime? modified;
+            TimeSpan? span;
+            string extraFormat = "";
+
+            if (DataSource.Settings.mode == AnsMode.Full)
             {
-                serverName.Text = DataSource.REGION_KEY + " - " + region.ToUpper();
+                modified = DataSource.GetLocalDataModified(Realm.id, Region);
+                if (modified != null)
+                {
+                    var now = DateTime.UtcNow;
+                    span = new TimeSpan(now.Ticks - modified.Value.Ticks);
+                    extraFormat = $"- Updated {span?.FormatTime()} ago";
+                }
             }
-            else
-            {
-                serverName.Text = region.ToUpper() + " - " + r.realms.JoinNames();
-            }
+            
+            serverName.Text = region.ToUpper() + " - " + r.realms.JoinNames() + extraFormat;
         }
 
         private void InitializeComponent()

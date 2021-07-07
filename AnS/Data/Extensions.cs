@@ -352,6 +352,38 @@ namespace AnS.Data
 
     public static class ObjectExtension
     {
+        public static string FormatTime(this TimeSpan span)
+        {
+            string formatted = "";
+
+            if (Math.Floor(span.TotalDays) == 0 && Math.Floor(span.TotalHours) == 0 && Math.Floor(span.TotalMinutes) == 0)
+            {
+                formatted = (int)span.TotalSeconds + "s";
+            }
+            else if (Math.Floor(span.TotalDays) == 0 && Math.Floor(span.TotalHours) == 0)
+            {
+                formatted = (int)span.TotalMinutes + "min";
+            }
+            else if (Math.Floor(span.TotalDays) == 0)
+            {
+                formatted = (int)span.TotalHours + "hr";
+                if (span.TotalHours > 1)
+                {
+                    formatted += "s";
+                }
+            }
+            else
+            {
+                formatted = Math.Floor(span.TotalDays) + "day";
+                if (span.TotalDays > 1)
+                {
+                    formatted += "s";
+                }
+            }
+
+            return formatted;
+        }
+
         public static double ToDouble(this object o)
         {
             if (o is double)
